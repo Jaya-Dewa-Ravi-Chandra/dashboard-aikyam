@@ -61,7 +61,7 @@ app.use(
 
       // CHANGE THIS TO YOUR ACTUAL
       // DEPLOYED DASHBOARD FRONTEND URL
-      "https://YOUR-DASHBOARD-FRONTEND.onrender.com",
+      "https://dashboard-aikyam-1.onrender.com",
     ],
 
     methods: [
