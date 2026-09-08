@@ -726,7 +726,7 @@ function Queries() {
    * the compose window opens with recipient, subject and body populated.
    */
   function mailtoUrl(email, query) {
-    const cleanEmail = "https://mail.google.com/mail/?view=cm&fs=1&to=kurumaddali1201@gmail.com&su="+String(email || "").trim();
+    const cleanEmail = String(email || "").trim();
     const subject = "Regarding your AI AIKYAM query";
 
     const body =
@@ -737,7 +737,7 @@ function Queries() {
       `Regards,\nAI AIKYAM Team`;
 
     return (
-      `mailto:${encodeURIComponent(cleanEmail)}` +
+      `https://mail.google.com/mail/?view=cm&fs=1&to=kurumaddali1201@gmail.com&su=${encodeURIComponent(cleanEmail)}` +
       `?subject=${encodeURIComponent(subject)}` +
       `&body=${encodeURIComponent(body)}`
     );
