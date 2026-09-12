@@ -737,7 +737,7 @@ function Queries() {
       `Regards,\nAI AIKYAM Team`;
 
     return (
-      `https://mail.google.com/mail/?view=cm&fs=1&to=kurumaddali1201@gmail.com&su=${encodeURIComponent(cleanEmail)}` +
+      `,https://mail.google.com/mail/?view=cm&fs=1&to=kurumaddali1201@gmail.com&su=${encodeURIComponent(cleanEmail)}` +
       `?subject=${encodeURIComponent(subject)}` +
       `&body=${encodeURIComponent(body)}`
     );
