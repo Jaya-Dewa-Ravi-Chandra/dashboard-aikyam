@@ -161,7 +161,7 @@ app.get("/api/health", async (req, res) => {
    ADMIN LOGIN
 ========================= */
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/admin/login", (req, res) => {
   const password = req.body?.password;
 
   if (
