@@ -833,7 +833,7 @@ app.patch(
 ========================================================= */
 
 app.get(
-  "/api/teams",
+  "/teams",
   authenticate,
   async (req, res) => {
     try {
