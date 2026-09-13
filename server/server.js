@@ -244,6 +244,34 @@ async function initializeSchema() {
   `);
 
   /* =======================================================
+     TEAM SOFT DELETE / RECYCLE BIN
+  ======================================================= */
+
+  await pool.query(`
+    ALTER TABLE teams
+    ADD COLUMN IF NOT EXISTS is_deleted
+    BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+
+  await pool.query(`
+    ALTER TABLE teams
+    ADD COLUMN IF NOT EXISTS deleted_at
+    TIMESTAMP NULL;
+  `);
+
+  await pool.query(`
+    UPDATE teams
+    SET is_deleted = FALSE
+    WHERE is_deleted IS NULL;
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+    teams_is_deleted_idx
+    ON teams(is_deleted);
+  `);
+
+  /* =======================================================
      TEAM MEMBERS
   ======================================================= */
 
@@ -628,6 +656,8 @@ app.get(
                 WHERE verified = FALSE
               )::int AS pending
           FROM teams
+          WHERE
+            COALESCE(is_deleted, FALSE) = FALSE
         `);
 
       const queryResult =
@@ -960,7 +990,9 @@ app.get(
         req.query.search || ""
       ).trim();
 
-      const conditions = [];
+      const conditions = [
+        "COALESCE(t.is_deleted, FALSE) = FALSE",
+      ];
 
       const values = [];
 
@@ -1134,6 +1166,9 @@ app.get(
             )::int AS pending
 
           FROM teams
+
+          WHERE
+            COALESCE(is_deleted, FALSE) = FALSE
         `);
 
       const statistics =
@@ -1205,7 +1240,9 @@ app.patch(
 
             SET verified = $1
 
-            WHERE team_id = $2
+            WHERE
+              team_id = $2
+              AND COALESCE(is_deleted, FALSE) = FALSE
 
             RETURNING
               team_id,
@@ -1249,6 +1286,362 @@ app.patch(
           "Unable to update team status.",
         code: error.code || null,
       });
+    }
+  }
+);
+
+/* =========================================================
+   TEAM — SOFT DELETE
+========================================================= */
+
+app.delete(
+  "/api/teams/:teamId",
+  authenticate,
+  async (req, res) => {
+    try {
+      const teamId =
+        String(req.params.teamId || "").trim();
+
+      if (!teamId) {
+        return res.status(400).json({
+          message: "Invalid team ID.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+            UPDATE teams
+
+            SET
+              is_deleted = TRUE,
+              deleted_at = CURRENT_TIMESTAMP
+
+            WHERE
+              team_id = $1
+              AND COALESCE(is_deleted, FALSE) = FALSE
+
+            RETURNING
+              id,
+              team_id,
+              team_name,
+              verified,
+              created_at,
+              is_deleted,
+              deleted_at
+          `,
+          [teamId]
+        );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          message: "Active team not found.",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Team moved to recycle bin.",
+        team: result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "TEAM SOFT DELETE ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        message: "Unable to delete team.",
+        code: error.code || null,
+      });
+    }
+  }
+);
+
+/* =========================================================
+   TEAM RECYCLE BIN
+========================================================= */
+
+app.get(
+  "/api/teams/recycle-bin",
+  authenticate,
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(`
+          SELECT
+            t.id,
+            t.team_id,
+            t.team_name,
+            t.verified,
+            t.created_at,
+            t.deleted_at,
+
+            COUNT(
+              tm.registration_id
+            )::int AS member_count
+
+          FROM teams t
+
+          LEFT JOIN team_members tm
+            ON tm.team_id = t.id
+
+          WHERE
+            COALESCE(t.is_deleted, FALSE) = TRUE
+
+          GROUP BY
+            t.id,
+            t.team_id,
+            t.team_name,
+            t.verified,
+            t.created_at,
+            t.deleted_at
+
+          ORDER BY
+            t.deleted_at DESC,
+            t.id DESC
+        `);
+
+      res.json({
+        rows: result.rows,
+        count: result.rows.length,
+      });
+    } catch (error) {
+      console.error(
+        "TEAM RECYCLE BIN ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        message: "Unable to load deleted teams.",
+        code: error.code || null,
+      });
+    }
+  }
+);
+
+/* =========================================================
+   RESTORE TEAM
+========================================================= */
+
+app.patch(
+  "/api/teams/:teamId/restore",
+  authenticate,
+  async (req, res) => {
+    try {
+      const teamId =
+        String(req.params.teamId || "").trim();
+
+      if (!teamId) {
+        return res.status(400).json({
+          message: "Invalid team ID.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+            UPDATE teams
+
+            SET
+              is_deleted = FALSE,
+              deleted_at = NULL
+
+            WHERE
+              team_id = $1
+              AND COALESCE(is_deleted, FALSE) = TRUE
+
+            RETURNING
+              id,
+              team_id,
+              team_name,
+              verified,
+              created_at,
+              is_deleted,
+              deleted_at
+          `,
+          [teamId]
+        );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          message: "Deleted team not found.",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Team restored successfully.",
+        team: result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "TEAM RESTORE ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        message: "Unable to restore team.",
+        code: error.code || null,
+      });
+    }
+  }
+);
+
+/* =========================================================
+   TEAM CSV EXPORT
+========================================================= */
+
+app.get(
+  "/api/teams/export",
+  async (req, res) => {
+    try {
+      const token = req.query.token;
+
+      if (!token) {
+        return res.status(401).send(
+          "Authentication required."
+        );
+      }
+
+      try {
+        jwt.verify(
+          token,
+          process.env.JWT_SECRET
+        );
+      } catch {
+        return res.status(401).send(
+          "Invalid or expired session."
+        );
+      }
+
+      const status =
+        req.query.status || "all";
+
+      let statusCondition = "";
+
+      if (status === "verified") {
+        statusCondition =
+          "AND t.verified = TRUE";
+      }
+
+      if (status === "pending") {
+        statusCondition =
+          "AND t.verified = FALSE";
+      }
+
+      const result =
+        await pool.query(`
+          SELECT
+            t.team_id,
+            t.team_name,
+            t.verified,
+            t.created_at,
+
+            COUNT(
+              tm.registration_id
+            )::int AS member_count,
+
+            COALESCE(
+              STRING_AGG(
+                r.registration_id ||
+                ' — ' ||
+                COALESCE(r.name, ''),
+                ' | '
+                ORDER BY tm.created_at ASC
+              ),
+              ''
+            ) AS members
+
+          FROM teams t
+
+          LEFT JOIN team_members tm
+            ON tm.team_id = t.id
+
+          LEFT JOIN registrations r
+            ON r.registration_id =
+               tm.registration_id
+
+          WHERE
+            COALESCE(t.is_deleted, FALSE) = FALSE
+            ${statusCondition}
+
+          GROUP BY
+            t.id,
+            t.team_id,
+            t.team_name,
+            t.verified,
+            t.created_at
+
+          ORDER BY
+            t.created_at DESC,
+            t.id DESC
+        `);
+
+      const headers = [
+        "Team ID",
+        "Team Name",
+        "Status",
+        "Member Count",
+        "Members",
+        "Created At",
+      ];
+
+      const lines = [
+        headers.map(csv).join(","),
+
+        ...result.rows.map((row) =>
+          [
+            row.team_id,
+            row.team_name,
+            row.verified
+              ? "verified"
+              : "pending",
+            row.member_count,
+            row.members,
+            row.created_at,
+          ]
+            .map(csv)
+            .join(",")
+        ),
+      ];
+
+      let filename;
+
+      if (status === "verified") {
+        filename =
+          "ai-aikyam-verified-teams.csv";
+      } else if (status === "pending") {
+        filename =
+          "ai-aikyam-pending-teams.csv";
+      } else {
+        filename =
+          "ai-aikyam-all-active-teams.csv";
+      }
+
+      res.setHeader(
+        "Content-Type",
+        "text/csv; charset=utf-8"
+      );
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`
+      );
+
+      res.send(lines.join("\n"));
+    } catch (error) {
+      console.error(
+        "TEAM CSV EXPORT ERROR:",
+        error
+      );
+
+      res.status(500).send(
+        "Unable to export teams."
+      );
     }
   }
 );
@@ -1335,6 +1728,7 @@ app.get(
 
             WHERE
               t.team_id = $1
+              AND COALESCE(t.is_deleted, FALSE) = FALSE
 
             GROUP BY
               t.id,

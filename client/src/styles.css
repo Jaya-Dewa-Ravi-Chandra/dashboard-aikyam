@@ -1622,3 +1622,53 @@ td small {
   }
 
 }
+/* =========================
+   TEAM ACTIONS / RECYCLE BIN
+========================= */
+
+.team-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.team-actions .status-button {
+  min-height: 34px;
+}
+
+.team-recycle-table {
+  min-width: 980px;
+}
+
+.team-recycle-table td:last-child,
+.team-recycle-table th:last-child {
+  text-align: right;
+}
+
+@media(max-width:700px) {
+  .page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-heading > div:last-child {
+    width: 100%;
+  }
+
+  .page-heading > div:last-child > .ghost-button,
+  .page-heading > div:last-child > .export-menu,
+  .page-heading > div:last-child > button {
+    margin-bottom: 4px;
+  }
+
+  .team-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .team-actions .status-button {
+    flex: 1;
+  }
+}

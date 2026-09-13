@@ -676,6 +676,8 @@ function Teams() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updating, setUpdating] = useState("");
+  const [showTeamRecycleBin, setShowTeamRecycleBin] =
+    useState(false);
 
   async function load() {
     setLoading(true);
@@ -692,12 +694,6 @@ function Teams() {
         params.toString()
           ? `?${params.toString()}`
           : "";
-
-      /*
-        IMPORTANT:
-        Server exposes /api/teams
-        NOT /api/registrations/teams
-      */
 
       const r = await apiFetch(
         `/teams${query}`
@@ -736,11 +732,6 @@ function Teams() {
     setError("");
 
     try {
-      /*
-        IMPORTANT:
-        Server exposes /api/teams/:teamId/status
-      */
-
       const r = await apiFetch(
         `/teams/${encodeURIComponent(
           teamId
@@ -774,6 +765,70 @@ function Teams() {
     }
   }
 
+  async function deleteTeam(teamId) {
+    if (
+      !window.confirm(
+        "Move this team to the recycle bin?"
+      )
+    ) {
+      return;
+    }
+
+    setUpdating(teamId);
+    setError("");
+
+    try {
+      const r = await apiFetch(
+        `/teams/${encodeURIComponent(
+          teamId
+        )}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const d = await r.json();
+
+      if (!r.ok) {
+        throw new Error(
+          d.message ||
+            "Unable to delete team."
+        );
+      }
+
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setUpdating("");
+    }
+  }
+
+  function exportTeams(
+    exportStatus = "all"
+  ) {
+    const token =
+      localStorage.getItem("adminToken");
+
+    if (!token) {
+      setError(
+        "Authentication token missing."
+      );
+      return;
+    }
+
+    const url =
+      `${API_BASE}/teams/export` +
+      `?status=${encodeURIComponent(
+        exportStatus
+      )}` +
+      `&token=${encodeURIComponent(
+        token
+      )}`;
+
+    window.open(url, "_blank");
+  }
+
   const filtered = useMemo(() => {
     const q =
       search.trim().toLowerCase();
@@ -786,6 +841,16 @@ function Teams() {
         .includes(q)
     );
   }, [teams, search]);
+
+  if (showTeamRecycleBin) {
+    return (
+      <TeamRecycleBin
+        onBack={() =>
+          setShowTeamRecycleBin(false)
+        }
+      />
+    );
+  }
 
   return (
     <section>
@@ -802,17 +867,68 @@ function Teams() {
           </h2>
         </div>
 
-        <button
-          className="ghost-button"
-          onClick={load}
-          disabled={loading}
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            flexWrap: "wrap",
+          }}
         >
-          <RefreshCw size={15} />
+          <div className="export-menu">
+            <button className="ghost-button">
+              <Download size={15} />
+              EXPORT
+            </button>
 
-          {loading
-            ? "LOADING..."
-            : "REFRESH"}
-        </button>
+            <div className="export-dropdown">
+              <button
+                onClick={() =>
+                  exportTeams("all")
+                }
+              >
+                ALL TEAMS
+              </button>
+
+              <button
+                onClick={() =>
+                  exportTeams("verified")
+                }
+              >
+                VERIFIED TEAMS
+              </button>
+
+              <button
+                onClick={() =>
+                  exportTeams("pending")
+                }
+              >
+                PENDING TEAMS
+              </button>
+            </div>
+          </div>
+
+          <button
+            className="ghost-button"
+            onClick={() =>
+              setShowTeamRecycleBin(true)
+            }
+          >
+            <Recycle size={15} />
+            RECYCLE BIN
+          </button>
+
+          <button
+            className="ghost-button"
+            onClick={load}
+            disabled={loading}
+          >
+            <RefreshCw size={15} />
+
+            {loading
+              ? "LOADING..."
+              : "REFRESH"}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -914,55 +1030,336 @@ function Teams() {
                       : "PENDING"}
                   </span>
 
-                  {verified ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "6px",
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    {verified ? (
+                      <button
+                        className="status-button pending-button"
+                        disabled={
+                          updating ===
+                          teamId
+                        }
+                        onClick={() =>
+                          setTeamStatus(
+                            teamId,
+                            "pending"
+                          )
+                        }
+                      >
+                        {updating ===
+                        teamId
+                          ? "..."
+                          : "UNVERIFY TEAM"}
+                      </button>
+                    ) : (
+                      <button
+                        className="status-button verify-button"
+                        disabled={
+                          updating ===
+                          teamId
+                        }
+                        onClick={() =>
+                          setTeamStatus(
+                            teamId,
+                            "verified"
+                          )
+                        }
+                      >
+                        <CheckCircle2
+                          size={14}
+                        />
+
+                        {updating ===
+                        teamId
+                          ? "..."
+                          : "VERIFY TEAM"}
+                      </button>
+                    )}
+
                     <button
-                      className="status-button pending-button"
+                      className="status-button delete-button"
                       disabled={
                         updating ===
                         teamId
                       }
                       onClick={() =>
-                        setTeamStatus(
-                          teamId,
-                          "pending"
-                        )
+                        deleteTeam(teamId)
                       }
                     >
-                      {updating ===
-                      teamId
-                        ? "..."
-                        : "UNVERIFY TEAM"}
-                    </button>
-                  ) : (
-                    <button
-                      className="status-button verify-button"
-                      disabled={
-                        updating ===
-                        teamId
-                      }
-                      onClick={() =>
-                        setTeamStatus(
-                          teamId,
-                          "verified"
-                        )
-                      }
-                    >
-                      <CheckCircle2
-                        size={14}
-                      />
+                      <Trash2 size={14} />
 
                       {updating ===
                       teamId
                         ? "..."
-                        : "VERIFY TEAM"}
+                        : "RECYCLE"}
                     </button>
-                  )}
+                  </div>
                 </div>
               </article>
             );
           })}
         </div>
       )}
+    </section>
+  );
+}
+
+/* =========================================================
+   TEAM RECYCLE BIN
+========================================================= */
+
+function TeamRecycleBin({ onBack }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [restoring, setRestoring] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const r = await apiFetch(
+        "/teams/recycle-bin"
+      );
+
+      const d = await r.json();
+
+      if (!r.ok) {
+        throw new Error(
+          d.message ||
+            "Unable to load deleted teams."
+        );
+      }
+
+      setRows(d.rows || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function restore(teamId) {
+    if (
+      !window.confirm(
+        "Restore this team to the active team registry?"
+      )
+    ) {
+      return;
+    }
+
+    setRestoring(teamId);
+    setError("");
+
+    try {
+      const r = await apiFetch(
+        `/teams/${encodeURIComponent(
+          teamId
+        )}/restore`,
+        {
+          method: "PATCH",
+        }
+      );
+
+      const d = await r.json();
+
+      if (!r.ok) {
+        throw new Error(
+          d.message ||
+            "Unable to restore team."
+        );
+      }
+
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRestoring("");
+    }
+  }
+
+  return (
+    <section>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">
+            02 / TEAM RECYCLE BIN
+          </div>
+
+          <h2>
+            DELETED
+            <br />
+            <em>TEAMS.</em>
+          </h2>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            className="ghost-button"
+            onClick={onBack}
+          >
+            <ChevronLeft size={15} />
+            BACK TO TEAMS
+          </button>
+
+          <button
+            className="ghost-button"
+            onClick={load}
+            disabled={loading}
+          >
+            <RefreshCw size={15} />
+
+            {loading
+              ? "LOADING..."
+              : "REFRESH"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
+
+      <div className="recycle-summary">
+        <Recycle size={18} />
+
+        <span>
+          {rows.length} team
+          {rows.length === 1
+            ? ""
+            : "s"} currently in
+          the recycle bin.
+        </span>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>TEAM ID</th>
+              <th>TEAM NAME</th>
+              <th>STATUS</th>
+              <th>MEMBERS</th>
+              <th>CREATED AT</th>
+              <th>DELETED AT</th>
+              <th>ACTION</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {loading ? (
+              <tr>
+                <td
+                  colSpan="7"
+                  className="empty"
+                >
+                  LOADING TEAM RECYCLE BIN...
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan="7"
+                  className="empty"
+                >
+                  TEAM RECYCLE BIN IS EMPTY.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr
+                  key={row.team_id}
+                >
+                  <td>
+                    <strong>
+                      {row.team_id}
+                    </strong>
+                  </td>
+
+                  <td>
+                    <strong>
+                      {row.team_name}
+                    </strong>
+                  </td>
+
+                  <td>
+                    <span
+                      className={`status-pill ${
+                        row.verified
+                          ? "verified"
+                          : "pending"
+                      }`}
+                    >
+                      {row.verified
+                        ? "VERIFIED"
+                        : "PENDING"}
+                    </span>
+                  </td>
+
+                  <td>
+                    {row.member_count}
+                  </td>
+
+                  <td>
+                    {dateText(
+                      row.created_at
+                    )}
+                  </td>
+
+                  <td>
+                    {dateText(
+                      row.deleted_at
+                    )}
+                  </td>
+
+                  <td>
+                    <button
+                      className="status-button restore-button"
+                      disabled={
+                        restoring ===
+                        row.team_id
+                      }
+                      onClick={() =>
+                        restore(
+                          row.team_id
+                        )
+                      }
+                    >
+                      <RotateCcw
+                        size={14}
+                      />
+
+                      {restoring ===
+                      row.team_id
+                        ? "..."
+                        : "RESTORE"}
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
