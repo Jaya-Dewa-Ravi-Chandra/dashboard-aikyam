@@ -1061,7 +1061,7 @@ app.get(
 ========================================================= */
 
 app.patch(
-  "/api/teams/:teamId/status",
+  "/teams/:teamId/status",
   authenticate,
   async (req, res) => {
     try {
@@ -1142,7 +1142,7 @@ app.patch(
 ========================================================= */
 
 app.get(
-  "/api/teams/:teamId",
+  "/teams/:teamId",
   authenticate,
   async (req, res) => {
     try {
