@@ -1,12 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import {
-  Activity,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Download,
-  FileDown,
-  LayoutDashboard,
+  ExternalLink,
   LogOut,
   Mail,
   RefreshCw,
@@ -16,12 +19,16 @@ import {
   ShieldCheck,
   Trash2,
   Users,
-  XCircle,
+  UsersRound,
 } from "lucide-react";
+
+/* =========================================================
+   API
+========================================================= */
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
-  "https://ai-aikyam-u7zk.onrender.com/api";
+  "https://dashboard-aikyam-1.onrender.com/api";
 
 function apiFetch(path, options = {}) {
   const token = localStorage.getItem("adminToken");
@@ -45,8 +52,12 @@ function dateText(value) {
   try {
     return new Date(value).toLocaleString();
   } catch {
-    return value;
+    return String(value);
   }
+}
+
+function formatMoney(value) {
+  return `₹ ${Number(value || 0).toLocaleString("en-IN")}`;
 }
 
 /* =========================================================
@@ -70,18 +81,26 @@ function Login({ onLogin }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({
+          password,
+        }),
       });
 
       const d = await r.json();
 
       if (!r.ok) {
-        throw new Error(d.message || "Invalid password");
+        throw new Error(
+          d.message || "Invalid admin password."
+        );
       }
 
-      if (d.token) {
-        localStorage.setItem("adminToken", d.token);
+      if (!d.token) {
+        throw new Error(
+          "Login succeeded but no authentication token was returned."
+        );
       }
+
+      localStorage.setItem("adminToken", d.token);
 
       onLogin();
     } catch (e) {
@@ -94,7 +113,9 @@ function Login({ onLogin }) {
   return (
     <main className="login-shell">
       <section className="login-card">
-        <div className="eyebrow">AAIKYAM / ADMIN ACCESS</div>
+        <div className="eyebrow">
+          AAIKYAM / ADMIN ACCESS
+        </div>
 
         <ShieldCheck size={34} />
 
@@ -105,20 +126,28 @@ function Login({ onLogin }) {
         </h1>
 
         <p>
-          Restricted administrative dashboard for registrations,
-          teams and participant queries.
+          Restricted administrative dashboard for
+          registrations, teams and participant queries.
         </p>
 
-        {error && <div className="error-box">{error}</div>}
+        {error && (
+          <div className="error-box">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={submit}>
-          <label htmlFor="admin-password">ACCESS KEY</label>
+          <label htmlFor="admin-password">
+            ACCESS KEY
+          </label>
 
           <input
             id="admin-password"
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) =>
+              setPassword(e.target.value)
+            }
             placeholder="Enter admin password"
             autoComplete="current-password"
           />
@@ -128,7 +157,9 @@ function Login({ onLogin }) {
             type="submit"
             disabled={loading}
           >
-            {loading ? "AUTHENTICATING..." : "ENTER CONSOLE"}
+            {loading
+              ? "AUTHENTICATING..."
+              : "ENTER CONSOLE"}
           </button>
         </form>
       </section>
@@ -158,17 +189,37 @@ function Registrations({ onStats }) {
     setError("");
 
     try {
-      const r = await apiFetch("/registrations");
+      const params = new URLSearchParams();
+
+      params.set("limit", "100");
+      params.set("page", "1");
+
+      if (status !== "all") {
+        params.set("status", status);
+      }
+
+      if (search.trim()) {
+        params.set("search", search.trim());
+      }
+
+      const r = await apiFetch(
+        `/registrations?${params.toString()}`
+      );
 
       const d = await r.json();
 
       if (!r.ok) {
         throw new Error(
-          d.message || "Unable to load registrations"
+          d.message ||
+            "Unable to load registrations."
         );
       }
 
-      setRows(d.rows || d.registrations || []);
+      setRows(d.rows || []);
+
+      if (d.stats && onStats) {
+        onStats(d.stats);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -178,7 +229,16 @@ function Registrations({ onStats }) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [status]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      load();
+      setPage(1);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [search]);
 
   async function setPaymentStatus(id, next) {
     setUpdating(id);
@@ -186,7 +246,9 @@ function Registrations({ onStats }) {
 
     try {
       const r = await apiFetch(
-        `/registrations/${encodeURIComponent(id)}/status`,
+        `/registrations/${encodeURIComponent(
+          id
+        )}/status`,
         {
           method: "PATCH",
           headers: {
@@ -202,17 +264,12 @@ function Registrations({ onStats }) {
 
       if (!r.ok) {
         throw new Error(
-          d.message || "Unable to update status"
+          d.message ||
+            "Unable to update registration status."
         );
       }
 
       await load();
-
-      if (onStats) {
-        onStats((current) => ({
-          ...current,
-        }));
-      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -242,17 +299,12 @@ function Registrations({ onStats }) {
 
       if (!r.ok) {
         throw new Error(
-          d.message || "Unable to recycle registration"
+          d.message ||
+            "Unable to recycle registration."
         );
       }
 
       await load();
-
-      if (onStats) {
-        onStats((current) => ({
-          ...current,
-        }));
-      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -260,53 +312,48 @@ function Registrations({ onStats }) {
     }
   }
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    return rows.filter((row) => {
-      const matchesSearch =
-        !q ||
-        [
-          row.registration_id,
-          row.name,
-          row.email,
-          row.phone,
-          row.institution,
-          row.city,
-          row.department,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(q);
-
-      const matchesStatus =
-        status === "all" ||
-        row.payment_status === status;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [rows, search, status]);
-
   const pages = Math.max(
     1,
-    Math.ceil(filtered.length / perPage)
+    Math.ceil(rows.length / perPage)
   );
 
   useEffect(() => {
-    if (page > pages) setPage(pages);
+    if (page > pages) {
+      setPage(pages);
+    }
   }, [pages, page]);
 
-  const visibleRows = filtered.slice(
+  const visibleRows = rows.slice(
     (page - 1) * perPage,
     page * perPage
   );
+
+  function exportCsv(exportStatus = "all") {
+    const token =
+      localStorage.getItem("adminToken");
+
+    if (!token) {
+      setError("Authentication token missing.");
+      return;
+    }
+
+    const url =
+      `${API_BASE}/registrations/export` +
+      `?status=${encodeURIComponent(
+        exportStatus
+      )}` +
+      `&token=${encodeURIComponent(token)}`;
+
+    window.open(url, "_blank");
+  }
 
   return (
     <section>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">01 / REGISTRATIONS</div>
+          <div className="eyebrow">
+            01 / REGISTRATIONS
+          </div>
 
           <h2>
             ATTENDEE
@@ -315,17 +362,65 @@ function Registrations({ onStats }) {
           </h2>
         </div>
 
-        <button
-          className="ghost-button"
-          onClick={load}
-          disabled={loading}
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            flexWrap: "wrap",
+          }}
         >
-          <RefreshCw size={15} />
-          {loading ? "LOADING..." : "REFRESH"}
-        </button>
+          <div className="export-menu">
+            <button className="ghost-button">
+              <Download size={15} />
+              EXPORT
+            </button>
+
+            <div className="export-dropdown">
+              <button
+                onClick={() =>
+                  exportCsv("all")
+                }
+              >
+                ALL REGISTRATIONS
+              </button>
+
+              <button
+                onClick={() =>
+                  exportCsv("verified")
+                }
+              >
+                VERIFIED ONLY
+              </button>
+
+              <button
+                onClick={() =>
+                  exportCsv("pending")
+                }
+              >
+                PENDING ONLY
+              </button>
+            </div>
+          </div>
+
+          <button
+            className="ghost-button"
+            onClick={load}
+            disabled={loading}
+          >
+            <RefreshCw size={15} />
+
+            {loading
+              ? "LOADING..."
+              : "REFRESH"}
+          </button>
+        </div>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
       <div className="toolbar">
         <div className="search-box">
@@ -348,9 +443,17 @@ function Registrations({ onStats }) {
             setPage(1);
           }}
         >
-          <option value="all">ALL STATUS</option>
-          <option value="verified">VERIFIED</option>
-          <option value="pending">PENDING</option>
+          <option value="all">
+            ALL STATUS
+          </option>
+
+          <option value="verified">
+            VERIFIED
+          </option>
+
+          <option value="pending">
+            PENDING
+          </option>
         </select>
       </div>
 
@@ -371,39 +474,59 @@ function Registrations({ onStats }) {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan="7" className="empty">
+                <td
+                  colSpan="7"
+                  className="empty"
+                >
                   LOADING REGISTRATIONS...
                 </td>
               </tr>
             ) : visibleRows.length === 0 ? (
               <tr>
-                <td colSpan="7" className="empty">
+                <td
+                  colSpan="7"
+                  className="empty"
+                >
                   NO REGISTRATIONS FOUND.
                 </td>
               </tr>
             ) : (
               visibleRows.map((row) => (
-                <tr key={row.registration_id}>
+                <tr
+                  key={row.registration_id}
+                >
                   <td>
-                    <strong>{row.registration_id}</strong>
+                    <strong>
+                      {row.registration_id}
+                    </strong>
 
                     <small>
-                      {dateText(row.created_at)}
+                      {dateText(
+                        row.created_at
+                      )}
                     </small>
                   </td>
 
                   <td>
                     <strong>{row.name}</strong>
 
-                    <small>{row.email}</small>
+                    <small>
+                      {row.email}
+                    </small>
 
-                    <small>{row.phone}</small>
+                    <small>
+                      {row.phone}
+                    </small>
                   </td>
 
                   <td>
-                    <strong>{row.institution}</strong>
+                    <strong>
+                      {row.institution}
+                    </strong>
 
-                    <small>{row.city}</small>
+                    <small>
+                      {row.city}
+                    </small>
 
                     <small>
                       {row.department} · Year{" "}
@@ -413,35 +536,44 @@ function Registrations({ onStats }) {
 
                   <td>
                     <div className="event-list">
-                      {(row.events || []).map((event) => (
-                        <span key={event}>{event}</span>
-                      ))}
+                      {(row.events || []).map(
+                        (event) => (
+                          <span key={event}>
+                            {event}
+                          </span>
+                        )
+                      )}
                     </div>
                   </td>
 
                   <td className="transaction-cell">
-                    {row.transaction_id || "—"}
+                    {row.transaction_id ||
+                      "—"}
                   </td>
 
                   <td>
                     <span
                       className={`status-pill ${
-                        row.payment_status === "verified"
+                        row.payment_status ===
+                        "verified"
                           ? "verified"
                           : "pending"
                       }`}
                     >
-                      {row.payment_status}
+                      {row.payment_status ||
+                        "pending"}
                     </span>
                   </td>
 
                   <td>
                     <div className="action-stack">
-                      {row.payment_status === "verified" ? (
+                      {row.payment_status ===
+                      "verified" ? (
                         <button
                           className="status-button pending-button"
                           disabled={
-                            updating === row.registration_id
+                            updating ===
+                            row.registration_id
                           }
                           onClick={() =>
                             setPaymentStatus(
@@ -450,7 +582,8 @@ function Registrations({ onStats }) {
                             )
                           }
                         >
-                          {updating === row.registration_id
+                          {updating ===
+                          row.registration_id
                             ? "..."
                             : "UNVERIFY"}
                         </button>
@@ -458,7 +591,8 @@ function Registrations({ onStats }) {
                         <button
                           className="status-button verify-button"
                           disabled={
-                            updating === row.registration_id
+                            updating ===
+                            row.registration_id
                           }
                           onClick={() =>
                             setPaymentStatus(
@@ -467,9 +601,12 @@ function Registrations({ onStats }) {
                             )
                           }
                         >
-                          <CheckCircle2 size={14} />
+                          <CheckCircle2
+                            size={14}
+                          />
 
-                          {updating === row.registration_id
+                          {updating ===
+                          row.registration_id
                             ? "..."
                             : "VERIFY"}
                         </button>
@@ -478,12 +615,14 @@ function Registrations({ onStats }) {
                       <button
                         className="status-button delete-button"
                         disabled={
-                          updating === row.registration_id
+                          updating ===
+                          row.registration_id
                         }
                         onClick={() =>
-                          softDelete(row.registration_id)
+                          softDelete(
+                            row.registration_id
+                          )
                         }
-                        title="Move to recycle bin"
                       >
                         <Trash2 size={14} />
                         RECYCLE
@@ -505,14 +644,18 @@ function Registrations({ onStats }) {
         <div>
           <button
             disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
+            onClick={() =>
+              setPage((p) => p - 1)
+            }
           >
             <ChevronLeft size={16} />
           </button>
 
           <button
             disabled={page >= pages}
-            onClick={() => setPage((p) => p + 1)}
+            onClick={() =>
+              setPage((p) => p + 1)
+            }
           >
             <ChevronRight size={16} />
           </button>
@@ -539,17 +682,41 @@ function Teams() {
     setError("");
 
     try {
-      const r = await apiFetch("/registrations/teams");
+      const params = new URLSearchParams();
+
+      if (search.trim()) {
+        params.set("search", search.trim());
+      }
+
+      const query =
+        params.toString()
+          ? `?${params.toString()}`
+          : "";
+
+      /*
+        IMPORTANT:
+        Server exposes /api/teams
+        NOT /api/registrations/teams
+      */
+
+      const r = await apiFetch(
+        `/teams${query}`
+      );
 
       const d = await r.json();
 
       if (!r.ok) {
         throw new Error(
-          d.message || "Unable to load teams"
+          d.message ||
+            "Unable to load teams."
         );
       }
 
-      setTeams(d.teams || d.rows || []);
+      setTeams(
+        d.rows ||
+          d.teams ||
+          []
+      );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -561,19 +728,28 @@ function Teams() {
     load();
   }, []);
 
-  async function setTeamStatus(teamId, next) {
+  async function setTeamStatus(
+    teamId,
+    next
+  ) {
     setUpdating(teamId);
     setError("");
 
     try {
+      /*
+        IMPORTANT:
+        Server exposes /api/teams/:teamId/status
+      */
+
       const r = await apiFetch(
-        `/registrations/teams/${encodeURIComponent(
+        `/teams/${encodeURIComponent(
           teamId
         )}/status`,
         {
           method: "PATCH",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
           body: JSON.stringify({
             status: next,
@@ -585,7 +761,8 @@ function Teams() {
 
       if (!r.ok) {
         throw new Error(
-          d.message || "Unable to update team status"
+          d.message ||
+            "Unable to update team status."
         );
       }
 
@@ -597,21 +774,26 @@ function Teams() {
     }
   }
 
-  const filtered = teams.filter((team) => {
-    const q = search.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    const q =
+      search.trim().toLowerCase();
 
-    if (!q) return true;
+    if (!q) return teams;
 
-    return JSON.stringify(team)
-      .toLowerCase()
-      .includes(q);
-  });
+    return teams.filter((team) =>
+      JSON.stringify(team)
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [teams, search]);
 
   return (
     <section>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">02 / TEAMS</div>
+          <div className="eyebrow">
+            02 / TEAMS
+          </div>
 
           <h2>
             TEAM
@@ -626,11 +808,18 @@ function Teams() {
           disabled={loading}
         >
           <RefreshCw size={15} />
-          {loading ? "LOADING..." : "REFRESH"}
+
+          {loading
+            ? "LOADING..."
+            : "REFRESH"}
         </button>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
       <div className="toolbar">
         <div className="search-box">
@@ -638,7 +827,9 @@ function Teams() {
 
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) =>
+              setSearch(e.target.value)
+            }
             placeholder="Search teams..."
           />
         </div>
@@ -656,18 +847,15 @@ function Teams() {
         <div className="query-grid">
           {filtered.map((team) => {
             const teamId =
-              team.team_id || team.id;
+              team.team_id ||
+              team.id;
 
             const members =
               team.members ||
-              team.registrations ||
-              team.team_members ||
               [];
 
-            const status =
-              team.status ||
-              team.team_status ||
-              "pending";
+            const verified =
+              Boolean(team.verified);
 
             return (
               <article
@@ -682,18 +870,17 @@ function Teams() {
 
                     <h3>
                       {team.team_name ||
-                        team.name ||
                         "UNTITLED TEAM"}
                     </h3>
                   </div>
 
-                  <Users size={22} />
+                  <UsersRound size={22} />
                 </div>
 
                 <p>
                   <strong>
-                    TEAM ID:{" "}
-                  </strong>
+                    TEAM ID:
+                  </strong>{" "}
                   {teamId}
 
                   {"\n\n"}
@@ -706,20 +893,10 @@ function Teams() {
 
                   {members.length > 0
                     ? members
-                        .map((member) => {
-                          if (
-                            typeof member ===
-                            "string"
-                          ) {
-                            return member;
-                          }
-
-                          return (
-                            member.registration_id ||
-                            member.name ||
-                            "UNKNOWN"
-                          );
-                        })
+                        .map(
+                          (member) =>
+                            `${member.registrationId || member.registration_id || "UNKNOWN"} — ${member.name || ""}`
+                        )
                         .join("\n")
                     : "No members returned."}
                 </p>
@@ -727,19 +904,22 @@ function Teams() {
                 <div className="query-bottom">
                   <span
                     className={`status-pill ${
-                      status === "verified"
+                      verified
                         ? "verified"
                         : "pending"
                     }`}
                   >
-                    {status}
+                    {verified
+                      ? "VERIFIED"
+                      : "PENDING"}
                   </span>
 
-                  {status === "verified" ? (
+                  {verified ? (
                     <button
                       className="status-button pending-button"
                       disabled={
-                        updating === teamId
+                        updating ===
+                        teamId
                       }
                       onClick={() =>
                         setTeamStatus(
@@ -748,7 +928,8 @@ function Teams() {
                         )
                       }
                     >
-                      {updating === teamId
+                      {updating ===
+                      teamId
                         ? "..."
                         : "UNVERIFY TEAM"}
                     </button>
@@ -756,7 +937,8 @@ function Teams() {
                     <button
                       className="status-button verify-button"
                       disabled={
-                        updating === teamId
+                        updating ===
+                        teamId
                       }
                       onClick={() =>
                         setTeamStatus(
@@ -765,9 +947,12 @@ function Teams() {
                         )
                       }
                     >
-                      <CheckCircle2 size={14} />
+                      <CheckCircle2
+                        size={14}
+                      />
 
-                      {updating === teamId
+                      {updating ===
+                      teamId
                         ? "..."
                         : "VERIFY TEAM"}
                     </button>
@@ -783,15 +968,21 @@ function Teams() {
 }
 
 /* =========================================================
-   ATTENDEE RECYCLE BIN
+   REGISTRATION RECYCLE BIN
 ========================================================= */
 
-function RecycleBin({ onStats }) {
-  const [rows, setRows] = useState([]);
+function RecycleBin() {
+  const [rows, setRows] =
+    useState([]);
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [restoring, setRestoring] = useState("");
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  const [restoring, setRestoring] =
+    useState("");
 
   async function load() {
     setLoading(true);
@@ -806,7 +997,8 @@ function RecycleBin({ onStats }) {
 
       if (!r.ok) {
         throw new Error(
-          d.message || "Unable to load recycle bin"
+          d.message ||
+            "Unable to load recycle bin."
         );
       }
 
@@ -823,11 +1015,13 @@ function RecycleBin({ onStats }) {
   }, []);
 
   async function restore(id) {
-    const confirmed = window.confirm(
-      "Restore this attendee to active registrations?"
-    );
-
-    if (!confirmed) return;
+    if (
+      !window.confirm(
+        "Restore this attendee to active registrations?"
+      )
+    ) {
+      return;
+    }
 
     setRestoring(id);
     setError("");
@@ -847,17 +1041,11 @@ function RecycleBin({ onStats }) {
       if (!r.ok) {
         throw new Error(
           d.message ||
-            "Unable to restore registration"
+            "Unable to restore registration."
         );
       }
 
       await load();
-
-      if (onStats) {
-        onStats((current) => ({
-          ...current,
-        }));
-      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -886,18 +1074,27 @@ function RecycleBin({ onStats }) {
           disabled={loading}
         >
           <RefreshCw size={15} />
-          {loading ? "LOADING..." : "REFRESH"}
+
+          {loading
+            ? "LOADING..."
+            : "REFRESH"}
         </button>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
       <div className="recycle-summary">
         <Recycle size={18} />
 
         <span>
           {rows.length} attendee
-          {rows.length === 1 ? "" : "s"} currently in
+          {rows.length === 1
+            ? ""
+            : "s"} currently in
           the recycle bin.
         </span>
       </div>
@@ -919,35 +1116,55 @@ function RecycleBin({ onStats }) {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan="7" className="empty">
+                <td
+                  colSpan="7"
+                  className="empty"
+                >
                   LOADING RECYCLE BIN...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan="7" className="empty">
+                <td
+                  colSpan="7"
+                  className="empty"
+                >
                   RECYCLE BIN IS EMPTY.
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.registration_id}>
+                <tr
+                  key={
+                    row.registration_id
+                  }
+                >
                   <td>
                     <strong>
-                      {row.registration_id}
+                      {
+                        row.registration_id
+                      }
                     </strong>
 
                     <small>
-                      {dateText(row.created_at)}
+                      {dateText(
+                        row.created_at
+                      )}
                     </small>
                   </td>
 
                   <td>
-                    <strong>{row.name}</strong>
+                    <strong>
+                      {row.name}
+                    </strong>
 
-                    <small>{row.email}</small>
+                    <small>
+                      {row.email}
+                    </small>
 
-                    <small>{row.phone}</small>
+                    <small>
+                      {row.phone}
+                    </small>
                   </td>
 
                   <td>
@@ -955,7 +1172,9 @@ function RecycleBin({ onStats }) {
                       {row.institution}
                     </strong>
 
-                    <small>{row.city}</small>
+                    <small>
+                      {row.city}
+                    </small>
 
                     <small>
                       {row.department} · Year{" "}
@@ -965,9 +1184,12 @@ function RecycleBin({ onStats }) {
 
                   <td>
                     <div className="event-list">
-                      {(row.events || []).map(
+                      {(row.events ||
+                        []).map(
                         (event) => (
-                          <span key={event}>
+                          <span
+                            key={event}
+                          >
                             {event}
                           </span>
                         )
@@ -984,12 +1206,15 @@ function RecycleBin({ onStats }) {
                           : "pending"
                       }`}
                     >
-                      {row.payment_status}
+                      {row.payment_status ||
+                        "pending"}
                     </span>
                   </td>
 
                   <td>
-                    {dateText(row.deleted_at)}
+                    {dateText(
+                      row.deleted_at
+                    )}
                   </td>
 
                   <td>
@@ -1005,7 +1230,9 @@ function RecycleBin({ onStats }) {
                         )
                       }
                     >
-                      <RotateCcw size={14} />
+                      <RotateCcw
+                        size={14}
+                      />
 
                       {restoring ===
                       row.registration_id
@@ -1028,12 +1255,18 @@ function RecycleBin({ onStats }) {
 ========================================================= */
 
 function Queries() {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] =
+    useState([]);
 
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [error, setError] =
+    useState("");
 
-  const [deleting, setDeleting] = useState("");
+  const [loading, setLoading] =
+    useState(true);
+
+  const [deleting, setDeleting] =
+    useState("");
+
   const [showRecycleBin, setShowRecycleBin] =
     useState(false);
 
@@ -1042,13 +1275,16 @@ function Queries() {
     setError("");
 
     try {
-      const r = await apiFetch("/queries");
+      const r = await apiFetch(
+        "/queries"
+      );
 
       const d = await r.json();
 
       if (!r.ok) {
         throw new Error(
-          d.message || "Unable to load queries"
+          d.message ||
+            "Unable to load queries."
         );
       }
 
@@ -1065,18 +1301,22 @@ function Queries() {
   }, []);
 
   async function deleteQuery(id) {
-    const confirmed = window.confirm(
-      "Move this query to the recycle bin?"
-    );
-
-    if (!confirmed) return;
+    if (
+      !window.confirm(
+        "Move this query to the recycle bin?"
+      )
+    ) {
+      return;
+    }
 
     setDeleting(id);
     setError("");
 
     try {
       const r = await apiFetch(
-        `/queries/${encodeURIComponent(id)}`,
+        `/queries/${encodeURIComponent(
+          id
+        )}`,
         {
           method: "DELETE",
         }
@@ -1086,7 +1326,8 @@ function Queries() {
 
       if (!r.ok) {
         throw new Error(
-          d.message || "Unable to delete query"
+          d.message ||
+            "Unable to delete query."
         );
       }
 
@@ -1098,10 +1339,10 @@ function Queries() {
     }
   }
 
-  function mailtoUrl(email, query) {
-    const cleanEmail =
-      String(email || "").trim();
-
+  function mailtoUrl(
+    email,
+    query
+  ) {
     const subject =
       "Regarding your AI AIKYAM query";
 
@@ -1113,8 +1354,12 @@ function Queries() {
       `Regards,\nAI AIKYAM Team`;
 
     return (
-      `mailto:${encodeURIComponent(cleanEmail)}` +
-      `?subject=${encodeURIComponent(subject)}` +
+      `mailto:${encodeURIComponent(
+        String(email || "").trim()
+      )}` +
+      `?subject=${encodeURIComponent(
+        subject
+      )}` +
       `&body=${encodeURIComponent(body)}`
     );
   }
@@ -1122,7 +1367,9 @@ function Queries() {
   if (showRecycleBin) {
     return (
       <QueryRecycleBin
-        onBack={() => setShowRecycleBin(false)}
+        onBack={() =>
+          setShowRecycleBin(false)
+        }
       />
     );
   }
@@ -1142,10 +1389,18 @@ function Queries() {
           </h2>
         </div>
 
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            flexWrap: "wrap",
+          }}
+        >
           <button
             className="ghost-button"
-            onClick={() => setShowRecycleBin(true)}
+            onClick={() =>
+              setShowRecycleBin(true)
+            }
           >
             <Recycle size={15} />
             RECYCLE BIN
@@ -1158,12 +1413,18 @@ function Queries() {
           >
             <RefreshCw size={15} />
 
-            {loading ? "LOADING..." : "REFRESH"}
+            {loading
+              ? "LOADING..."
+              : "REFRESH"}
           </button>
         </div>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="empty-card">
@@ -1183,21 +1444,30 @@ function Queries() {
               <div className="query-top">
                 <div>
                   <div className="query-number">
-                    QUERY {String(index + 1).padStart(2, "0")}
+                    QUERY{" "}
+                    {String(
+                      index + 1
+                    ).padStart(2, "0")}
                   </div>
 
-                  <h3>{row.email}</h3>
+                  <h3>
+                    {row.email}
+                  </h3>
                 </div>
 
                 <Mail size={22} />
               </div>
 
-              <p>{row.query}</p>
+              <p>
+                {row.query}
+              </p>
 
               <div className="query-bottom">
                 <small>
                   RECEIVED{" "}
-                  {dateText(row.created_at)}
+                  {dateText(
+                    row.created_at
+                  )}
                 </small>
 
                 <div
@@ -1224,12 +1494,15 @@ function Queries() {
                       deleting === row.id
                     }
                     onClick={() =>
-                      deleteQuery(row.id)
+                      deleteQuery(
+                        row.id
+                      )
                     }
                   >
                     <Trash2 size={14} />
 
-                    {deleting === row.id
+                    {deleting ===
+                    row.id
                       ? "..."
                       : "RECYCLE"}
                   </button>
@@ -1247,12 +1520,20 @@ function Queries() {
    QUERY RECYCLE BIN
 ========================================================= */
 
-function QueryRecycleBin({ onBack }) {
-  const [rows, setRows] = useState([]);
+function QueryRecycleBin({
+  onBack,
+}) {
+  const [rows, setRows] =
+    useState([]);
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [restoring, setRestoring] = useState("");
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  const [restoring, setRestoring] =
+    useState("");
 
   async function load() {
     setLoading(true);
@@ -1268,7 +1549,7 @@ function QueryRecycleBin({ onBack }) {
       if (!r.ok) {
         throw new Error(
           d.message ||
-            "Unable to load query recycle bin"
+            "Unable to load deleted queries."
         );
       }
 
@@ -1285,11 +1566,13 @@ function QueryRecycleBin({ onBack }) {
   }, []);
 
   async function restore(id) {
-    const confirmed = window.confirm(
-      "Restore this query to the active inbox?"
-    );
-
-    if (!confirmed) return;
+    if (
+      !window.confirm(
+        "Restore this query to the active inbox?"
+      )
+    ) {
+      return;
+    }
 
     setRestoring(id);
     setError("");
@@ -1309,7 +1592,7 @@ function QueryRecycleBin({ onBack }) {
       if (!r.ok) {
         throw new Error(
           d.message ||
-            "Unable to restore query"
+            "Unable to restore query."
         );
       }
 
@@ -1336,7 +1619,13 @@ function QueryRecycleBin({ onBack }) {
           </h2>
         </div>
 
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            flexWrap: "wrap",
+          }}
+        >
           <button
             className="ghost-button"
             onClick={onBack}
@@ -1352,12 +1641,18 @@ function QueryRecycleBin({ onBack }) {
           >
             <RefreshCw size={15} />
 
-            {loading ? "LOADING..." : "REFRESH"}
+            {loading
+              ? "LOADING..."
+              : "REFRESH"}
           </button>
         </div>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
       <div className="recycle-summary">
         <Recycle size={18} />
@@ -1390,21 +1685,29 @@ function QueryRecycleBin({ onBack }) {
                 <div>
                   <div className="query-number">
                     DELETED QUERY{" "}
-                    {String(index + 1).padStart(2, "0")}
+                    {String(
+                      index + 1
+                    ).padStart(2, "0")}
                   </div>
 
-                  <h3>{row.email}</h3>
+                  <h3>
+                    {row.email}
+                  </h3>
                 </div>
 
                 <Recycle size={22} />
               </div>
 
-              <p>{row.query}</p>
+              <p>
+                {row.query}
+              </p>
 
               <div className="query-bottom">
                 <small>
                   DELETED{" "}
-                  {dateText(row.deleted_at)}
+                  {dateText(
+                    row.deleted_at
+                  )}
                 </small>
 
                 <button
@@ -1416,9 +1719,12 @@ function QueryRecycleBin({ onBack }) {
                     restore(row.id)
                   }
                 >
-                  <RotateCcw size={14} />
+                  <RotateCcw
+                    size={14}
+                  />
 
-                  {restoring === row.id
+                  {restoring ===
+                  row.id
                     ? "..."
                     : "RESTORE"}
                 </button>
@@ -1435,16 +1741,21 @@ function QueryRecycleBin({ onBack }) {
    DASHBOARD
 ========================================================= */
 
-function Dashboard({ onLogout }) {
+function Dashboard({
+  onLogout,
+}) {
   const [section, setSection] =
     useState("registrations");
 
-  const [stats, setStats] = useState({
-    registrations: 0,
-    verified: 0,
-    teams: 0,
-    queries: 0,
-  });
+  const [stats, setStats] =
+    useState({
+      total: 0,
+      verified: 0,
+      pending: 0,
+      verifiedRevenue: 0,
+      teams: 0,
+      queries: 0,
+    });
 
   const [statsLoading, setStatsLoading] =
     useState(true);
@@ -1453,37 +1764,89 @@ function Dashboard({ onLogout }) {
     setStatsLoading(true);
 
     try {
+      /*
+        The server already returns registration
+        statistics from GET /api/registrations.
+      */
+
       const r = await apiFetch(
-        "/registrations/stats"
+        "/registrations?limit=1&page=1"
       );
 
       const d = await r.json();
 
       if (r.ok) {
         setStats({
+          total:
+            d.stats?.total ??
+            0,
+
           registrations:
-            d.registrations ??
-            d.total ??
+            d.stats?.total ??
             0,
 
           verified:
-            d.verified ??
-            d.verifiedRegistrations ??
+            d.stats?.verified ??
+            0,
+
+          pending:
+            d.stats?.pending ??
+            0,
+
+          verifiedRevenue:
+            d.stats?.verifiedRevenue ??
             0,
 
           teams:
-            d.teams ??
-            d.totalTeams ??
+            d.teamStats?.total ??
             0,
 
           queries:
-            d.queries ??
-            d.totalQueries ??
+            d.queryStats?.total ??
             0,
         });
       }
+
+      /*
+        Team statistics are loaded separately.
+      */
+
+      const teamResponse =
+        await apiFetch("/teams");
+
+      if (teamResponse.ok) {
+        const teamData =
+          await teamResponse.json();
+
+        setStats((current) => ({
+          ...current,
+          teams:
+            teamData.stats?.total ??
+            teamData.rows?.length ??
+            0,
+        }));
+      }
+
+      /*
+        Query count.
+      */
+
+      const queryResponse =
+        await apiFetch("/queries");
+
+      if (queryResponse.ok) {
+        const queryData =
+          await queryResponse.json();
+
+        setStats((current) => ({
+          ...current,
+          queries:
+            queryData.rows?.length ??
+            0,
+        }));
+      }
     } catch {
-      // Stats should never break the dashboard.
+      // Stats should never crash dashboard.
     } finally {
       setStatsLoading(false);
     }
@@ -1494,7 +1857,10 @@ function Dashboard({ onLogout }) {
   }, []);
 
   function logout() {
-    localStorage.removeItem("adminToken");
+    localStorage.removeItem(
+      "adminToken"
+    );
+
     onLogout();
   }
 
@@ -1507,7 +1873,7 @@ function Dashboard({ onLogout }) {
     {
       id: "teams",
       label: "TEAMS",
-      icon: Users,
+      icon: UsersRound,
     },
     {
       id: "queries",
@@ -1536,7 +1902,8 @@ function Dashboard({ onLogout }) {
 
         <nav>
           {navItems.map((item) => {
-            const Icon = item.icon;
+            const Icon =
+              item.icon;
 
             return (
               <button
@@ -1551,6 +1918,7 @@ function Dashboard({ onLogout }) {
                 }
               >
                 <Icon size={15} />
+
                 {item.label}
               </button>
             );
@@ -1559,16 +1927,23 @@ function Dashboard({ onLogout }) {
 
         <div className="sidebar-bottom">
           <div className="mini-stat">
-            <span>REGISTRATIONS</span>
+            <span>
+              REGISTRATIONS
+            </span>
+
             <strong>
               {statsLoading
                 ? "..."
-                : stats.registrations}
+                : stats.total ??
+                  stats.registrations}
             </strong>
           </div>
 
           <div className="mini-stat">
-            <span>VERIFIED</span>
+            <span>
+              VERIFIED
+            </span>
+
             <strong>
               {statsLoading
                 ? "..."
@@ -1577,7 +1952,10 @@ function Dashboard({ onLogout }) {
           </div>
 
           <div className="mini-stat">
-            <span>TEAMS</span>
+            <span>
+              TEAMS
+            </span>
+
             <strong>
               {statsLoading
                 ? "..."
@@ -1586,7 +1964,10 @@ function Dashboard({ onLogout }) {
           </div>
 
           <div className="mini-stat">
-            <span>QUERIES</span>
+            <span>
+              QUERIES
+            </span>
+
             <strong>
               {statsLoading
                 ? "..."
@@ -1605,20 +1986,31 @@ function Dashboard({ onLogout }) {
       </aside>
 
       <main className="dashboard-main">
-        {section === "registrations" && (
+        {section ===
+          "registrations" && (
           <Registrations
-            onStats={loadStats}
+            onStats={(newStats) =>
+              setStats((current) => ({
+                ...current,
+                ...newStats,
+                registrations:
+                  newStats.total ??
+                  current.registrations,
+              }))
+            }
           />
         )}
 
-        {section === "teams" && <Teams />}
+        {section === "teams" && (
+          <Teams />
+        )}
 
-        {section === "queries" && <Queries />}
+        {section === "queries" && (
+          <Queries />
+        )}
 
         {section === "recycle" && (
-          <RecycleBin
-            onStats={loadStats}
-          />
+          <RecycleBin />
         )}
       </main>
     </div>
@@ -1633,7 +2025,9 @@ export default function App() {
   const [authenticated, setAuthenticated] =
     useState(
       Boolean(
-        localStorage.getItem("adminToken")
+        localStorage.getItem(
+          "adminToken"
+        )
       )
     );
 

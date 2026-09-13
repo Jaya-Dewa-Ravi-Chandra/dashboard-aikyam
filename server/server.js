@@ -575,7 +575,123 @@ app.get(
     }
   }
 );
+/* =========================================================
+   DASHBOARD STATISTICS
+========================================================= */
 
+app.get(
+  "/api/registrations/stats",
+  authenticate,
+  async (req, res) => {
+    try {
+      const registrationResult =
+        await pool.query(`
+          SELECT
+            COUNT(*)::int AS total,
+
+            COUNT(*)
+            FILTER (
+              WHERE payment_status = 'verified'
+            )::int AS verified,
+
+            COUNT(*)
+            FILTER (
+              WHERE
+                payment_status IS NULL
+                OR payment_status <> 'verified'
+            )::int AS pending,
+
+            COALESCE(
+              SUM(amount)
+              FILTER (
+                WHERE payment_status = 'verified'
+              ),
+              0
+            )::int AS verified_revenue
+
+          FROM registrations
+
+          WHERE
+            COALESCE(is_deleted, FALSE) = FALSE
+        `);
+
+      const teamResult =
+        await pool.query(`
+          SELECT
+            COUNT(*)::int AS total,
+            COUNT(*)
+              FILTER (
+                WHERE verified = TRUE
+              )::int AS verified,
+            COUNT(*)
+              FILTER (
+                WHERE verified = FALSE
+              )::int AS pending
+          FROM teams
+        `);
+
+      const queryResult =
+        await pool.query(`
+          SELECT
+            COUNT(*)::int AS total
+          FROM queries
+          WHERE
+            COALESCE(is_deleted, FALSE) = FALSE
+        `);
+
+      const registrations =
+        registrationResult.rows[0];
+
+      const teams =
+        teamResult.rows[0];
+
+      const queries =
+        queryResult.rows[0];
+
+      res.json({
+        registrations:
+          Number(registrations.total),
+
+        total:
+          Number(registrations.total),
+
+        verified:
+          Number(registrations.verified),
+
+        pending:
+          Number(registrations.pending),
+
+        verifiedRevenue:
+          Number(
+            registrations.verified_revenue
+          ),
+
+        teams:
+          Number(teams.total),
+
+        verifiedTeams:
+          Number(teams.verified),
+
+        pendingTeams:
+          Number(teams.pending),
+
+        queries:
+          Number(queries.total),
+      });
+    } catch (error) {
+      console.error(
+        "DASHBOARD STATS ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        message:
+          "Unable to load dashboard statistics.",
+        code: error.code || null,
+      });
+    }
+  }
+);
 /* =========================================================
    VERIFY / UNVERIFY REGISTRATION
 ========================================================= */
