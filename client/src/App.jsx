@@ -1751,14 +1751,13 @@ function Queries() {
       `Regards,\nAI AIKYAM Team`;
 
     return (
-      `mailto:${encodeURIComponent(
-        String(email || "").trim()
-      )}` +
-      `?subject=${encodeURIComponent(
-        subject
-      )}` +
-      `&body=${encodeURIComponent(body)}`
-    );
+    `https://mail.google.com/mail/?view=cm&fs=1` +
+    `&to=${encodeURIComponent(
+      String(email || "").trim()
+    )}` +
+    `&su=${encodeURIComponent(subject)}` +
+    `&body=${encodeURIComponent(body)}`
+  );
   }
 
   if (showRecycleBin) {
